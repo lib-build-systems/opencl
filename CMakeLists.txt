@@ -84,7 +84,11 @@ endif ()
 include_directories (${OPENCL_ICD_LOADER_HEADERS_DIR})
 add_definitions (-DCL_TARGET_OPENCL_VERSION=220)
 
-target_include_directories (OpenCL PRIVATE loader)
+target_include_directories (OpenCL PRIVATE
+                                        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/loader>
+                                        $<INSTALL_INTERFACE:${PROJECT_SOURCE_DIR}/inc
+                                    PUBLIC:
+                                        $<INSTALL_INTERFACE:${PROJECT_SOURCE_DIR}/inc>)
 target_link_libraries (OpenCL ${CMAKE_DL_LIBS})
 
 include (CTest)
