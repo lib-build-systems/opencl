@@ -104,7 +104,8 @@ install(TARGETS OpenCL
         
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/inc/
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/OpenCL
-        FILES_MATCHING PATTERN "*.h")
+        FILES_MATCHING PATTERN "*.h"
+        PATTERN ".git" EXCLUDE)
 
 install(EXPORT OpenCL-targets
         NAMESPACE OpenCL::
