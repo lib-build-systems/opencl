@@ -99,5 +99,5 @@ install(TARGETS OpenCL
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
         
 install(EXPORT OpenCL-targets
-        NAMESPACE OpenCL
+        NAMESPACE OpenCL::
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/opencl)
