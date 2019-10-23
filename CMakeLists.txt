@@ -51,6 +51,7 @@ set (OPENCL_ICD_LOADER_SOURCES
 if (WIN32)
     list (APPEND OPENCL_ICD_LOADER_SOURCES 
         loader/windows/icd_windows.c
+        loader/windows/icd_windows.h
         loader/windows/icd_windows_dxgk.c
         loader/windows/icd_windows_dxgk.h
         loader/windows/icd_windows_envvars.c
@@ -79,7 +80,7 @@ set_target_properties (OpenCL PROPERTIES VERSION "1.2" SOVERSION "1")
 if (WIN32)
     target_link_libraries (OpenCL cfgmgr32.lib)
 
-    option (OPENCL_ICD_LOADER_REQUIRE_WDK "Build with D3DKMT support, which requires the Windows WDK." ON)
+    option (OPENCL_ICD_LOADER_REQUIRE_WDK "Build with D3DKMT support, which requires the Windows WDK." OFF)
     if (OPENCL_ICD_LOADER_REQUIRE_WDK)
         if(DEFINED ENV{WDKContentRoot})
             file(GLOB D3DKMT_HEADER "$ENV{WDKContentRoot}/Include/*/km/d3dkmthk.h")
@@ -130,6 +131,7 @@ include (CTest)
 if (BUILD_TESTING)
     add_subdirectory (test)
 endif()
+
 install(TARGETS OpenCL
         EXPORT OpenCL-targets
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
@@ -144,3 +146,4 @@ install(DIRECTORY ${PROJECT_SOURCE_DIR}/inc/
 install(EXPORT OpenCL-targets
         NAMESPACE OpenCL::
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/OpenCL)
+        
