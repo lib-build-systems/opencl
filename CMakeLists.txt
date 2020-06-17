@@ -34,6 +34,11 @@ find_package (Threads REQUIRED)
 # advance. Use it with discretion.
 option (BUILD_SHARED_LIBS "Build shared libs" ON)
 
+# This option enables support for OpenCL 3.0 Provisional in the ICD loader.  It
+# is currently off by default while the specification is provisional, as it may
+# change.
+option (ENABLE_OPENCL30_PROVISIONAL "Enable 3.0 provisional entry points" OFF)
+
 include(CheckFunctionExists)
 check_function_exists(secure_getenv HAVE_SECURE_GETENV)
 check_function_exists(__secure_getenv HAVE___SECURE_GETENV)
@@ -49,7 +54,19 @@ set (OPENCL_ICD_LOADER_SOURCES
     loader/icd_platform.h)
 
 if (WIN32)
+    # By default don't include OpenCL 3.0 symbol definitions (i.e. comment them
+    # out), but include them for OpenCL 3.0 builds.  Once the symbols are no
+    # longer provisional then they may be included unconditionally.
+    set(ENABLE_OPENCL30_SYMBOLS ";")
+    if (ENABLE_OPENCL30_PROVISIONAL)
+      set(ENABLE_OPENCL30_SYMBOLS "")
+    endif ()
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/loader/windows/OpenCL.def.in
+        ${CMAKE_CURRENT_BINARY_DIR}/loader/windows/OpenCL.def)
+
     list (APPEND OPENCL_ICD_LOADER_SOURCES 
+        loader/windows/adapter.h
         loader/windows/icd_windows.c
         loader/windows/icd_windows.h
         loader/windows/icd_windows_dxgk.c
@@ -57,7 +74,9 @@ if (WIN32)
         loader/windows/icd_windows_envvars.c
         loader/windows/icd_windows_hkr.c
         loader/windows/icd_windows_hkr.h
-        loader/windows/OpenCL.def
+        loader/windows/icd_windows_apppackage.cpp
+        loader/windows/icd_windows_apppackage.h
+        ${CMAKE_CURRENT_BINARY_DIR}/loader/windows/OpenCL.def
         loader/windows/OpenCL.rc)
     # Only add the DXSDK include directory if the environment variable is
     # defined.  Since the DXSDK has merged into the Windows SDK, this is
@@ -66,10 +85,23 @@ if (WIN32)
         include_directories ($ENV{DXSDK_DIR}/Include)
     endif ()
 else ()
+    # By default don't include OpenCL 3.0 symbol definitions (i.e. comment them
+    # out), but include them for OpenCL 3.0 builds.  Once the symbols are no
+    # longer provisional then they may be included unconditionally.
+    set(ENABLE_OPENCL30_SYMBOLS_START "/*")
+    set(ENABLE_OPENCL30_SYMBOLS_END "*/")
+    if (ENABLE_OPENCL30_PROVISIONAL)
+      set(ENABLE_OPENCL30_SYMBOLS_START "")
+      set(ENABLE_OPENCL30_SYMBOLS_END "")
+    endif ()
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/loader/linux/icd_exports.map.in
+        ${CMAKE_CURRENT_BINARY_DIR}/loader/linux/icd_exports.map)
+
     list (APPEND OPENCL_ICD_LOADER_SOURCES
         loader/linux/icd_linux.c
         loader/linux/icd_linux_envvars.c
-        loader/linux/icd_exports.map)
+        ${CMAKE_CURRENT_BINARY_DIR}/loader/linux/icd_exports.map)
 endif ()
 
 set (OPENCL_ICD_LOADER_HEADERS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/inc CACHE PATH "Path to OpenCL Headers")
@@ -78,28 +110,11 @@ add_library (OpenCL ${OPENCL_ICD_LOADER_SOURCES})
 set_target_properties (OpenCL PROPERTIES VERSION "1.2" SOVERSION "1")
 
 if (WIN32)
-    target_link_libraries (OpenCL cfgmgr32.lib)
+    target_link_libraries (OpenCL cfgmgr32.lib runtimeobject.lib)
 
-    option (OPENCL_ICD_LOADER_REQUIRE_WDK "Build with D3DKMT support, which requires the Windows WDK." OFF)
-    if (OPENCL_ICD_LOADER_REQUIRE_WDK)
-        if(DEFINED ENV{WDKContentRoot})
-            file(GLOB D3DKMT_HEADER "$ENV{WDKContentRoot}/Include/*/km/d3dkmthk.h")
-        else()
-            file(GLOB D3DKMT_HEADER "$ENV{HOMEDRIVE}/Program Files */Windows Kits/10/Include/*/km/d3dkmthk.h")
-        endif()
-
-        if(D3DKMT_HEADER)
-            list(GET D3DKMT_HEADER -1 LATEST_D3DKMT_HEADER)
-            get_filename_component(WDK_DIRECTORY ${LATEST_D3DKMT_HEADER} DIRECTORY)
-            get_filename_component(WDK_DIRECTORY ${WDK_DIRECTORY} DIRECTORY)
-            message(STATUS "Found the Windows WDK in: ${WDK_DIRECTORY}")
-            target_compile_definitions(OpenCL PRIVATE OPENCL_ICD_LOADER_REQUIRE_WDK)
-            target_include_directories(OpenCL PRIVATE ${WDK_DIRECTORY}/um)
-            target_include_directories(OpenCL PRIVATE ${WDK_DIRECTORY}/km)
-            target_include_directories(OpenCL PRIVATE ${WDK_DIRECTORY}/shared)
-        else()
-            message(FATAL_ERROR "The Windows WDK was not found. Consider disabling OPENCL_ICD_LOADER_REQUIRE_WDK. Aborting.")
-        endif()
+    option (OPENCL_ICD_LOADER_DISABLE_OPENCLON12 "Disable support for OpenCLOn12. Support for OpenCLOn12 should only be disabled when building an import lib to link with, and must be enabled when building an ICD loader for distribution!" OFF)
+    if (OPENCL_ICD_LOADER_DISABLE_OPENCLON12)
+        target_compile_definitions(OpenCL PRIVATE OPENCL_ICD_LOADER_DISABLE_OPENCLON12)
     endif()
 
     if(NOT USE_DYNAMIC_VCXX_RUNTIME)
@@ -116,13 +131,17 @@ else()
     if (APPLE)
         target_link_libraries (OpenCL ${CMAKE_THREAD_LIBS_INIT})
     else ()
-        set_target_properties (OpenCL PROPERTIES LINK_FLAGS "-Wl,--version-script -Wl,${CMAKE_CURRENT_SOURCE_DIR}/loader/linux/icd_exports.map")
+        set_target_properties (OpenCL PROPERTIES LINK_FLAGS "-Wl,--version-script -Wl,${CMAKE_CURRENT_BINARY_DIR}/loader/linux/icd_exports.map")
         target_link_libraries (OpenCL ${CMAKE_THREAD_LIBS_INIT})
     endif ()
 endif ()
 
 include_directories (${OPENCL_ICD_LOADER_HEADERS_DIR})
-add_definitions (-DCL_TARGET_OPENCL_VERSION=220)
+if (ENABLE_OPENCL30_PROVISIONAL)
+  add_definitions (-DCL_TARGET_OPENCL_VERSION=300)
+else()
+  add_definitions (-DCL_TARGET_OPENCL_VERSION=220)
+endif()
 
 target_include_directories (OpenCL PRIVATE ${CMAKE_CURRENT_BINARY_DIR} loader)
 target_link_libraries (OpenCL ${CMAKE_DL_LIBS})
